@@ -338,6 +338,11 @@ export class CdpBrowser extends BrowserBase {
     return await this.#defaultContext.newPage();
   }
 
+  // rebrowser-patches: expose browser CDP session
+  _connection(): Connection {
+    return this.#connection;
+  }
+
   async _createPageInContext(contextId?: string): Promise<Page> {
     const {targetId} = await this.#connection.send('Target.createTarget', {
       url: 'about:blank',
