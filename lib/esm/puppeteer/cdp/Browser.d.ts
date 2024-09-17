@@ -32,6 +32,7 @@ export declare class CdpBrowser extends BrowserBase {
     _disposeContext(contextId?: string): Promise<void>;
     wsEndpoint(): string;
     newPage(): Promise<Page>;
+    _connection(): Connection;
     _createPageInContext(contextId?: string): Promise<Page>;
     targets(): CdpTarget[];
     target(): CdpTarget;
