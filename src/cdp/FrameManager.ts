@@ -187,10 +187,6 @@ export class FrameManager extends EventEmitter<FrameManagerEvents> {
       this.#onFrameStoppedLoading(event.frameId);
     });
     session.on('Runtime.executionContextCreated', async event => {
-      if (process.env['REBROWSER_PATCHES_RUNTIME_FIX_MODE'] !== '0') {
-        // rebrowser-patches: ignore default logic
-        return
-      }
       await this.#frameTreeHandled?.valueOrThrow();
       this.#onExecutionContextCreated(event.context, session);
     });
@@ -216,17 +212,9 @@ export class FrameManager extends EventEmitter<FrameManagerEvents> {
           this.#frameTreeHandled?.resolve();
         }),
         client.send('Page.setLifecycleEventsEnabled', {enabled: true}),
-        (() => {
-          // rebrowser-patches: skip Runtime.enable
-          if (process.env['REBROWSER_PATCHES_RUNTIME_FIX_MODE'] !== '0') {
-            process.env['REBROWSER_PATCHES_DEBUG'] && console.log('[rebrowser-patches][FrameManager] initialize')
-            return this.#createIsolatedWorld(client, UTILITY_WORLD_NAME)
-          }
-
-          return client.send('Runtime.enable').then(() => {
-            return this.#createIsolatedWorld(client, UTILITY_WORLD_NAME);
-          })
-        })(),
+        client.send('Runtime.enable').then(() => {
+          return this.#createIsolatedWorld(client, UTILITY_WORLD_NAME);
+        }),
         ...(frame
           ? Array.from(this.#scriptsToEvaluateOnNewDocument.values())
           : []
@@ -237,30 +225,6 @@ export class FrameManager extends EventEmitter<FrameManagerEvents> {
           return frame?.addExposedFunctionBinding(binding);
         }),
       ]);
-
-      // rebrowser-patches: manually create main world context
-      if (process.env['REBROWSER_PATCHES_RUNTIME_FIX_MODE'] !== '0') {
-        this.frames()
-          .filter(frame => {
-            return frame.client === client;
-          }).map(frame => {
-          const world = frame.worlds[MAIN_WORLD]
-          const contextPayload = {
-            id: -1,
-            name: '',
-            auxData: {
-              frameId: frame._id,
-            }
-          }
-          const context = new ExecutionContext(
-            frame.client,
-            // @ts-ignore
-            contextPayload,
-            world
-          );
-          world.setContext(context);
-        })
-      }
     } catch (error) {
       this.#frameTreeHandled?.resolve();
       // The target might have been closed before the initialization finished.
@@ -486,24 +450,6 @@ export class FrameManager extends EventEmitter<FrameManagerEvents> {
       this._frameTree.addFrame(frame);
     }
 
-    // rebrowser-patches: we cannot fully dispose contexts as they won't be recreated as we don't have Runtime events,
-    // instead, just mark it all empty
-    if (process.env['REBROWSER_PATCHES_RUNTIME_FIX_MODE'] !== '0') {
-      process.env['REBROWSER_PATCHES_DEBUG'] && console.log(`[rebrowser-patches] onFrameNavigated, navigationType = ${navigationType}, id = ${framePayload.id}, url = ${framePayload.url}`)
-      for (const worldSymbol of [MAIN_WORLD, PUPPETEER_WORLD]) {
-        // @ts-ignore
-        if (frame.worlds[worldSymbol].context) {
-          // @ts-ignore
-          const frameOrWorker = frame.worlds[worldSymbol].environment
-          if ('clearDocumentHandle' in frameOrWorker) {
-            frameOrWorker.clearDocumentHandle();
-          }
-          // @ts-ignore
-          frame.worlds[worldSymbol].context?.clear(worldSymbol === MAIN_WORLD ? -1 : -2)
-        }
-      }
-    }
-
     frame = await this._frameTree.waitForFrame(frameId);
     frame._navigated(framePayload);
     this.emit(FrameManagerEvent.FrameNavigated, frame);
@@ -535,24 +481,6 @@ export class FrameManager extends EventEmitter<FrameManagerEvents> {
               frameId: frame._id,
               worldName: name,
               grantUniveralAccess: true,
-            })
-            .then((createIsolatedWorldResult: any) => {
-              // rebrowser-patches: save created context id
-              if (process.env['REBROWSER_PATCHES_RUNTIME_FIX_MODE'] === '0') {
-                return
-              }
-              if (!createIsolatedWorldResult?.executionContextId) {
-                // probably "Target closed" error, just ignore it
-                return
-              }
-              // @ts-ignore
-              this.#onExecutionContextCreated({
-                id: createIsolatedWorldResult.executionContextId,
-                name,
-                auxData: {
-                  frameId: frame._id,
-                }
-              }, frame.client)
             })
             .catch(debugError);
         })

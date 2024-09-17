@@ -22,7 +22,6 @@ export declare class ExecutionContext extends EventEmitter<{
     bindingcalled: Protocol.Runtime.BindingCalledEvent;
 }> implements Disposable {
     #private;
-    _frameId: any;
     constructor(client: CDPSession, contextPayload: Protocol.Runtime.ExecutionContextDescription, world: IsolatedWorld);
     get id(): number;
     get puppeteerUtil(): Promise<JSHandle<PuppeteerUtil>>;
@@ -117,8 +116,6 @@ export declare class ExecutionContext extends EventEmitter<{
      * {@link ElementHandle | element handle}.
      */
     evaluateHandle<Params extends unknown[], Func extends EvaluateFunc<Params> = EvaluateFunc<Params>>(pageFunction: Func | string, ...args: Params): Promise<HandleFor<Awaited<ReturnType<Func>>>>;
-    clear(newId: any): void;
-    acquireContextId(): Promise<void>;
     [disposeSymbol](): void;
 }
 //# sourceMappingURL=ExecutionContext.d.ts.map

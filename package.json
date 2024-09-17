@@ -1,31 +1,13 @@
 {
-  "name": "rebrowser-puppeteer-core",
-  "version": "22.13.100",
-  "description": "A drop-in replacement for puppeteer-core patched with rebrowser-patches. It allows to pass modern automation detection tests.",
+  "name": "puppeteer-core",
+  "version": "22.14.0",
+  "description": "A high-level API to control headless Chrome over the DevTools Protocol",
   "keywords": [
-    "rebrowser",
-    "rebrowser-patches",
-    "automation",
-    "bot",
-    "bot-detection",
-    "captcha",
-    "scraping",
-    "web-scraping",
     "puppeteer",
     "chrome",
     "headless",
     "automation"
   ],
-  "contributors": [
-    "Nick Webson <nwebson@rebrowser.net>"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/rebrowser/rebrowser-puppeteer-core"
-  },
-  "bugs": {
-    "url": "https://github.com/rebrowser/rebrowser-patches/issues"
-  },
   "type": "commonjs",
   "main": "./lib/cjs/puppeteer/puppeteer-core.js",
   "types": "./lib/types.d.ts",
@@ -44,6 +26,10 @@
       "import": "./*",
       "require": "./*"
     }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/puppeteer/puppeteer/tree/main/packages/puppeteer-core"
   },
   "engines": {
     "node": ">=18"
@@ -134,10 +120,10 @@
   "author": "The Chromium Authors",
   "license": "Apache-2.0",
   "dependencies": {
-    "@puppeteer/browsers": "2.2.4",
-    "chromium-bidi": "0.6.1",
+    "@puppeteer/browsers": "2.3.0",
+    "chromium-bidi": "0.6.2",
     "debug": "^4.3.5",
-    "devtools-protocol": "0.0.1299070",
+    "devtools-protocol": "0.0.1312386",
     "ws": "^8.18.0"
   },
   "devDependencies": {

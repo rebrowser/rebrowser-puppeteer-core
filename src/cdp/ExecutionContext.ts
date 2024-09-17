@@ -78,7 +78,6 @@ export class ExecutionContext
   #client: CDPSession;
   #world: IsolatedWorld;
   #id: number;
-  _frameId: any;
   #name?: string;
 
   readonly #disposables = new DisposableStack();
@@ -95,22 +94,16 @@ export class ExecutionContext
     if (contextPayload.name) {
       this.#name = contextPayload.name;
     }
-    // rebrowser-patches: keep frameId to use later
-    if (contextPayload.auxData?.frameId) {
-      this._frameId = contextPayload.auxData?.frameId;
-    }
     const clientEmitter = this.#disposables.use(new EventEmitter(this.#client));
     clientEmitter.on('Runtime.bindingCalled', this.#onBindingCalled.bind(this));
-    if (process.env['REBROWSER_PATCHES_RUNTIME_FIX_MODE'] === '0') {
-      clientEmitter.on('Runtime.executionContextDestroyed', async event => {
-        if (event.executionContextId === this.#id) {
-          this[disposeSymbol]();
-        }
-      });
-      clientEmitter.on('Runtime.executionContextsCleared', async () => {
+    clientEmitter.on('Runtime.executionContextDestroyed', async event => {
+      if (event.executionContextId === this.#id) {
         this[disposeSymbol]();
-      });
-    }
+      }
+    });
+    clientEmitter.on('Runtime.executionContextsCleared', async () => {
+      this[disposeSymbol]();
+    });
     clientEmitter.on('Runtime.consoleAPICalled', this.#onConsoleAPI.bind(this));
     clientEmitter.on(CDPSessionEvent.Disconnected, () => {
       this[disposeSymbol]();
@@ -358,74 +351,6 @@ export class ExecutionContext
     return await this.#evaluate(false, pageFunction, ...args);
   }
 
-  // rebrowser-patches: alternative to dispose
-  clear(newId: any) {
-    this.#id = newId
-    this.#bindings = new Map()
-    this.#bindingsInstalled = false
-    this.#puppeteerUtil = undefined
-  }
-  // rebrowser-patches: get context id if it's missing
-  async acquireContextId() {
-    if (this.#id > 0) {
-      return
-    }
-
-    const fixMode = process.env['REBROWSER_PATCHES_RUNTIME_FIX_MODE'] || 'alwaysIsolated'
-    process.env['REBROWSER_PATCHES_DEBUG'] && console.log(`[rebrowser-patches][acquireContextId] id = ${this.#id}, name = ${this.#name}, fixMode = ${fixMode}`)
-
-    let contextId: any
-    if (fixMode === 'alwaysIsolated') {
-      if (this.#id === -3) {
-        throw new Error('[rebrowser-patches] web workers are not supported in alwaysIsolated mode')
-      }
-
-      const sendRes = await this.#client
-        .send('Page.createIsolatedWorld', {
-          frameId: this._frameId,
-          worldName: this.#name,
-          grantUniveralAccess: true,
-        })
-      process.env['REBROWSER_PATCHES_DEBUG'] && console.log(`[rebrowser-patches][acquireContextId] Page.createIsolatedWorld result:`, sendRes)
-      contextId = sendRes.executionContextId
-    } else if (fixMode === 'enableDisable') {
-      const executionContextCreatedHandler = ({ context }: any) => {
-        process.env['REBROWSER_PATCHES_DEBUG'] && console.log(`[rebrowser-patches][executionContextCreated] this.#id = ${this.#id}, name = ${this.#name}, contextId = ${contextId}, event.context.id = ${context.id}`)
-
-        if (contextId > 0) {
-          // already acquired the id
-          return
-        }
-
-        if (this.#id === -1) {
-          // main world
-          if (context.auxData && context.auxData['isDefault']) {
-            contextId = context.id
-          }
-        } else if (this.#id === -2) {
-          // utility world
-          if (this.#name === context.name) {
-            contextId = context.id
-          }
-        } else if (this.#id === -3) {
-          // web worker
-          contextId = context.id
-        }
-      }
-
-      this.#client.on('Runtime.executionContextCreated', executionContextCreatedHandler)
-      await this.#client.send('Runtime.enable')
-      await this.#client.send('Runtime.disable')
-      this.#client.off('Runtime.executionContextCreated', executionContextCreatedHandler)
-    }
-
-    if (!contextId) {
-      throw new Error('[rebrowser-patches] acquireContextId failed')
-    }
-
-    this.#id = contextId
-  }
-
   async #evaluate<
     Params extends unknown[],
     Func extends EvaluateFunc<Params> = EvaluateFunc<Params>,
@@ -450,13 +375,6 @@ export class ExecutionContext
     pageFunction: Func | string,
     ...args: Params
   ): Promise<HandleFor<Awaited<ReturnType<Func>>> | Awaited<ReturnType<Func>>> {
-    // rebrowser-patches: context id is missing, acquire it and try again
-    if (this.#id < 0) {
-      await this.acquireContextId()
-      // @ts-ignore
-      return this.#evaluate(returnByValue, pageFunction, ...args)
-    }
-
     const sourceUrlComment = getSourceUrlComment(
       getSourcePuppeteerURLIfAvailable(pageFunction)?.toString() ??
         PuppeteerURL.INTERNAL_URL
@@ -499,9 +417,19 @@ export class ExecutionContext
       callFunctionOnPromise = this.#client.send('Runtime.callFunctionOn', {
         functionDeclaration: functionDeclarationWithSourceUrl,
         executionContextId: this.#id,
-        arguments: args.length
-          ? await Promise.all(args.map(convertArgument.bind(this)))
-          : [],
+        // LazyArgs are used only internally and should not affect the order
+        // evaluate calls for the public APIs.
+        arguments: args.some(arg => {
+          return arg instanceof LazyArg;
+        })
+          ? await Promise.all(
+              args.map(arg => {
+                return convertArgumentAsync(this, arg);
+              })
+            )
+          : args.map(arg => {
+              return convertArgument(this, arg);
+            }),
         returnByValue,
         awaitPromise: true,
         userGesture: true,
@@ -524,13 +452,20 @@ export class ExecutionContext
       ? valueFromRemoteObject(remoteObject)
       : this.#world.createCdpHandle(remoteObject);
 
-    async function convertArgument(
-      this: ExecutionContext,
+    async function convertArgumentAsync(
+      context: ExecutionContext,
       arg: unknown
-    ): Promise<Protocol.Runtime.CallArgument> {
+    ) {
       if (arg instanceof LazyArg) {
-        arg = await arg.get(this);
+        arg = await arg.get(context);
       }
+      return convertArgument(context, arg);
+    }
+
+    function convertArgument(
+      context: ExecutionContext,
+      arg: unknown
+    ): Protocol.Runtime.CallArgument {
       if (typeof arg === 'bigint') {
         // eslint-disable-line valid-typeof
         return {unserializableValue: `${arg.toString()}n`};
@@ -552,7 +487,7 @@ export class ExecutionContext
           ? arg
           : null;
       if (objectHandle) {
-        if (objectHandle.realm !== this.#world) {
+        if (objectHandle.realm !== context.#world) {
           throw new Error(
             'JSHandles can be evaluated only in the context they were created!'
           );
