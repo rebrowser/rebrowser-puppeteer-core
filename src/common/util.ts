@@ -308,7 +308,9 @@ export function timeout(ms: number, cause?: Error): Observable<never> {
  * @internal
  */
 export const UTILITY_WORLD_NAME =
-  '__puppeteer_utility_world__' + packageVersion;
+  // rebrowser-patches: change utility world name
+  process.env['REBROWSER_PATCHES_UTILITY_WORLD_NAME'] !== '0' ? (process.env['REBROWSER_PATCHES_UTILITY_WORLD_NAME'] || 'util') :
+    '__puppeteer_utility_world__' + packageVersion;
 
 /**
  * @internal
@@ -319,6 +321,10 @@ export const SOURCE_URL_REGEX =
  * @internal
  */
 export function getSourceUrlComment(url: string): string {
+  // rebrowser-patches: change sourceUrl to generic script name
+  if (process.env['REBROWSER_PATCHES_SOURCE_URL'] !== '0') {
+    url = process.env['REBROWSER_PATCHES_SOURCE_URL'] || 'app.js'
+  }
   return `//# sourceURL=${url}`;
 }
 
