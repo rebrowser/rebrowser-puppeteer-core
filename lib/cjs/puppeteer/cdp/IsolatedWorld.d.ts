@@ -12,9 +12,9 @@ import { EventEmitter } from '../common/EventEmitter.js';
 import type { TimeoutSettings } from '../common/TimeoutSettings.js';
 import type { EvaluateFunc, HandleFor } from '../common/types.js';
 import { disposeSymbol } from '../util/disposable.js';
-import type { ExecutionContext } from './ExecutionContext.js';
+import { ExecutionContext } from './ExecutionContext.js';
 import type { CdpFrame } from './Frame.js';
-import type { MAIN_WORLD, PUPPETEER_WORLD } from './IsolatedWorlds.js';
+import { MAIN_WORLD, PUPPETEER_WORLD } from './IsolatedWorlds.js';
 import type { CdpWebWorker } from './WebWorker.js';
 /**
  * @internal

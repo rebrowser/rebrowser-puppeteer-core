@@ -1,6 +1,6 @@
 {
   "name": "rebrowser-puppeteer-core",
-  "version": "23.6.0",
+  "version": "23.6.101",
   "description": "A drop-in replacement for puppeteer-core patched with rebrowser-patches. It allows to pass modern automation detection tests.",
   "keywords": [
     "rebrowser",

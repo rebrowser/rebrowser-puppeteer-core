@@ -1,3 +1,4 @@
+//@ts-nocheck
 /**
  * @license
  * Copyright 2019 Google Inc.
@@ -18,13 +19,14 @@ import {
   fromEmitterEvent,
   timeout,
   withSourcePuppeteerURLIfNone,
+  UTILITY_WORLD_NAME,
 } from '../common/util.js';
 import {disposeSymbol} from '../util/disposable.js';
 
 import {CdpElementHandle} from './ElementHandle.js';
-import type {ExecutionContext} from './ExecutionContext.js';
+import {ExecutionContext} from './ExecutionContext.js';
 import type {CdpFrame} from './Frame.js';
-import type {MAIN_WORLD, PUPPETEER_WORLD} from './IsolatedWorlds.js';
+import {MAIN_WORLD, PUPPETEER_WORLD} from './IsolatedWorlds.js';
 import {CdpJSHandle} from './JSHandle.js';
 import type {CdpWebWorker} from './WebWorker.js';
 
@@ -136,6 +138,23 @@ export class IsolatedWorld extends Realm {
    * Waits for the next context to be set on the isolated world.
    */
   async #waitForExecutionContext(): Promise<ExecutionContext> {
+    const fixMode = process.env['REBROWSER_PATCHES_RUNTIME_FIX_MODE'] || 'addBinding';
+    if (fixMode === 'addBinding') {
+      const isMainWorld = this.#frameOrWorker.worlds[MAIN_WORLD] === this;
+      process.env['REBROWSER_PATCHES_DEBUG'] && console.log(`[rebrowser-patches][waitForExecutionContext] frameId = ${this.#frameOrWorker._id}, isMainWorld = ${isMainWorld}`);
+
+      const contextPayload = {
+        id: isMainWorld ? -1 : -2,
+        name: isMainWorld ? '' : UTILITY_WORLD_NAME,
+        auxData: {
+          frameId: this.#frameOrWorker._id,
+        }
+      };
+      const context = new ExecutionContext(this.client, contextPayload, this);
+      this.setContext(context);
+      return context;
+    }
+    
     const error = new Error('Execution context was destroyed');
     const result = await firstValueFrom(
       fromEmitterEvent(this.#emitter, 'context').pipe(
