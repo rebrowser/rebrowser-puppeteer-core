@@ -24,15 +24,13 @@
 ## Installation
 
 ```bash npm2yarn
-npm i puppeteer # Downloads compatible Chrome during installation.
-npm i puppeteer-core # Alternatively, install as a library, without downloading Chrome.
+npm i rebrowser-puppeteer-core # Alternatively, install as a library, without downloading Chrome.
 ```
 
 ## Example
 
 ```ts
-import puppeteer from 'puppeteer';
-// Or import puppeteer from 'puppeteer-core';
+import puppeteer from 'rebrowser-puppeteer-core';
 
 // Launch the browser and open a new blank page
 const browser = await puppeteer.launch();
