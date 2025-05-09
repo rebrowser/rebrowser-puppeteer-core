@@ -58,6 +58,10 @@ export class CdpWebWorker extends WebWorker {
     this.#world = new IsolatedWorld(this, new TimeoutSettings());
 
     this.#client.once('Runtime.executionContextCreated', async event => {
+      if (process.env['REBROWSER_PATCHES_RUNTIME_FIX_MODE'] !== '0') {
+        // rebrowser-patches: ignore default logic
+        return
+      }
       this.#world.setContext(
         new ExecutionContext(client, event.context, this.#world),
       );
@@ -82,7 +86,22 @@ export class CdpWebWorker extends WebWorker {
 
     // This might fail if the target is closed before we receive all execution contexts.
     networkManager?.addClient(this.#client).catch(debugError);
-    this.#client.send('Runtime.enable').catch(debugError);
+    if (process.env['REBROWSER_PATCHES_RUNTIME_FIX_MODE'] !== '0') {
+      // @ts-ignore
+      process.env['REBROWSER_PATCHES_DEBUG'] && console.log('[rebrowser-patches][WebWorker] initialize', targetType, targetId, client._target(), client._target()._getTargetInfo())
+
+      // rebrowser-patches: manually create context
+      const contextPayload = {
+        id: -3,
+        auxData: {
+          frameId: targetId,
+        }
+      }
+      // @ts-ignore
+      this.#world.setContext(new ExecutionContext(client, contextPayload, this.#world));
+    } else {
+      this.#client.send('Runtime.enable').catch(debugError);
+    }
   }
 
   mainRealm(): Realm {
