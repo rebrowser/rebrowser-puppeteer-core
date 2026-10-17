@@ -1,13 +1,31 @@
 {
-  "name": "puppeteer-core",
+  "name": "rebrowser-puppeteer-core",
   "version": "25.14.0",
-  "description": "A high-level API to control headless Chrome over the DevTools Protocol",
+  "description": "A drop-in replacement for puppeteer-core patched with rebrowser-patches. It allows to pass modern automation detection tests.",
   "keywords": [
+    "rebrowser",
+    "rebrowser-patches",
+    "automation",
+    "bot",
+    "bot-detection",
+    "captcha",
+    "scraping",
+    "web-scraping",
     "puppeteer",
     "chrome",
     "headless",
     "automation"
   ],
+  "contributors": [
+    "Nick Webson <nwebson@rebrowser.net>"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rebrowser/rebrowser-patches"
+  },
+  "bugs": {
+    "url": "https://github.com/rebrowser/rebrowser-patches/issues"
+  },
   "type": "module",
   "main": "./lib/puppeteer/puppeteer-core.js",
   "browser": "./lib/puppeteer/puppeteer-core-browser.js",
@@ -27,10 +45,6 @@
       "import": "./*",
       "require": "./*"
     }
-  },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/puppeteer/puppeteer/tree/main/packages/puppeteer-core"
   },
   "engines": {
     "node": ">=22.12.0"
