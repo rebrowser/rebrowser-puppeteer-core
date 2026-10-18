@@ -292,7 +292,9 @@ export function timeout(ms: number, cause?: Error): Observable<never> {
  * @internal
  */
 export const UTILITY_WORLD_NAME =
-  '__puppeteer_utility_world__' + packageVersion;
+  // rebrowser-patches: change utility world name
+  process.env['REBROWSER_PATCHES_UTILITY_WORLD_NAME'] !== '0' ? (process.env['REBROWSER_PATCHES_UTILITY_WORLD_NAME'] || 'util') :
+    '__puppeteer_utility_world__' + packageVersion;
 
 /**
  * @internal
@@ -303,7 +305,14 @@ export const SOURCE_URL_REGEX =
  * @internal
  */
 export function getSourceUrlComment(url: string): string {
-  return `//# sourceURL=${url}`;
+  // rebrowser-patches: by default add no sourceURL, so stack frames of evaluated code are plain "<anonymous>" like any
+  // injected script (Puppeteer's "pptr:" URLs, or any fixed replacement name, would identify the library).
+  // REBROWSER_PATCHES_SOURCE_URL=<name> uses that name instead, REBROWSER_PATCHES_SOURCE_URL=0 keeps "pptr:" URLs.
+  const sourceUrl = process.env['REBROWSER_PATCHES_SOURCE_URL'];
+  if (sourceUrl === '0') {
+    return `//# sourceURL=${url}`;
+  }
+  return sourceUrl ? `//# sourceURL=${sourceUrl}` : '';
 }
 
 /**

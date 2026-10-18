@@ -247,6 +247,9 @@ export function valueFromPrimitiveRemoteObject(
 /**
  * @internal
  */
+// rebrowser-patches: without Runtime.enable, Chrome drops CDP bindings when the page navigates
+// (crbug.com/382473087). The binding is added again when the navigation commits, so a call made before that
+// waits for it instead of throwing. This function is serialized into the page: keep comments out of its body.
 export function addPageBinding(
   type: string,
   name: string,
@@ -273,19 +276,32 @@ export function addPageBinding(
       callPuppeteer.lastSeq = seq;
       callPuppeteer.args.set(seq, args);
 
-      // @ts-expect-error: In a different context.
-      // Needs to be the same as CDP_BINDING_PREFIX.
-      globalThis[prefix + name](
-        JSON.stringify({
-          type,
-          name,
-          seq,
-          args,
-          isTrivial: !args.some(value => {
-            return value instanceof Node;
-          }),
+      const payload = JSON.stringify({
+        type,
+        name,
+        seq,
+        args,
+        isTrivial: !args.some(value => {
+          return value instanceof Node;
         }),
-      );
+      });
+      const send = (tries: number): void => {
+        // @ts-expect-error: In a different context.
+        // Needs to be the same as CDP_BINDING_PREFIX.
+        const cdpBinding = globalThis[prefix + name];
+        if (typeof cdpBinding === 'function') {
+          cdpBinding(payload);
+        } else if (tries < 500) {
+          setTimeout(() => {
+            return send(tries + 1);
+          }, 10);
+        } else {
+          callPuppeteer.callbacks
+            .get(seq)
+            ?.reject(new Error(`binding ${name} is not available`));
+        }
+      };
+      send(0);
 
       return new Promise((resolve, reject) => {
         callPuppeteer.callbacks.set(seq, {

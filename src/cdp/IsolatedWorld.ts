@@ -1,3 +1,4 @@
+//@ts-nocheck
 /**
  * @license
  * Copyright 2019 Google Inc.
@@ -20,14 +21,14 @@ import {
   fromEmitterEvent,
   timeout,
   withSourcePuppeteerURLIfNone,
+  UTILITY_WORLD_NAME,
 } from '../common/util.js';
 import {disposeSymbol} from '../util/disposable.js';
 
 import {CdpElementHandle} from './ElementHandle.js';
-import type {ExecutionContext} from './ExecutionContext.js';
+import {ExecutionContext} from './ExecutionContext.js';
 import type {CdpFrame} from './Frame.js';
-import type {PUPPETEER_WORLD} from './IsolatedWorlds.js';
-import {MAIN_WORLD} from './IsolatedWorlds.js';
+import {MAIN_WORLD, PUPPETEER_WORLD} from './IsolatedWorlds.js';
 import {CdpJSHandle} from './JSHandle.js';
 import {CdpWebWorker} from './WebWorker.js';
 
@@ -147,6 +148,25 @@ export class IsolatedWorld extends Realm {
    * Waits for the next context to be set on the isolated world.
    */
   async #waitForExecutionContext(): Promise<ExecutionContext> {
+    const fixMode = process.env['REBROWSER_PATCHES_RUNTIME_FIX_MODE'] || 'addBinding';
+    // rebrowser-patches: there are no Runtime events in any patched mode, so create the context lazily
+    // (alwaysIsolated/enableDisable used to wait here forever for frames attached after the session started)
+    if (fixMode !== '0') {
+      const isMainWorld = this.#frameOrWorker.worlds[MAIN_WORLD] === this;
+      process.env['REBROWSER_PATCHES_DEBUG'] && console.log(`[rebrowser-patches][waitForExecutionContext] frameId = ${this.#frameOrWorker._id}, isMainWorld = ${isMainWorld}`);
+
+      const contextPayload = {
+        id: isMainWorld ? -1 : -2,
+        name: isMainWorld ? '' : UTILITY_WORLD_NAME,
+        auxData: {
+          frameId: this.#frameOrWorker._id,
+        }
+      };
+      const context = new ExecutionContext(this.client, contextPayload, this, this.#logger);
+      this.setContext(context);
+      return context;
+    }
+    
     const error = new Error('Execution context was destroyed');
     const result = await firstValueFrom(
       fromEmitterEvent(this.#emitter, 'context').pipe(
@@ -216,6 +236,8 @@ export class IsolatedWorld extends Realm {
     if (!context) {
       context = await this.#waitForExecutionContext();
     }
+    // rebrowser-patches: make sure id is acquired
+    await context.acquireContextId()
     const {object} = await this.client.send('DOM.resolveNode', {
       backendNodeId: backendNodeId,
       executionContextId: context.id,

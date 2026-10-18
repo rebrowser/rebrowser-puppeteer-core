@@ -26,6 +26,7 @@ export declare class ExecutionContext extends EventEmitter<{
     #private;
     static getOrCreateAriaQuerySelectorBinding(logger: Logger): Binding;
     static getOrCreateAriaQuerySelectorAllBinding(logger: Logger): Binding;
+    _frameId: any;
     constructor(client: CDPSession, contextPayload: Protocol.Runtime.ExecutionContextDescription, world: IsolatedWorld, logger: Logger);
     get id(): number;
     /**
@@ -123,6 +124,12 @@ export declare class ExecutionContext extends EventEmitter<{
      * {@link ElementHandle | element handle}.
      */
     evaluateHandle<Params extends unknown[], Func extends EvaluateFunc<Params> = EvaluateFunc<Params>>(pageFunction: Func | string, ...args: Params): Promise<HandleFor<Awaited<ReturnType<Func>>>>;
+    clear(newId: any): void;
+    __re__getMainWorld({ client, frameId, isWorker }: any): Promise<any>;
+    __re__getMainWorldIdByObject({ client, frameId, isWorker }: any): Promise<number | undefined>;
+    __re__getMainWorldByBinding({ client, frameId, isWorker }: any): Promise<any>;
+    __re__getIsolatedWorld({ client, frameId, worldName }: any): Promise<any>;
+    acquireContextId(tryCount?: number): Promise<any>;
     [disposeSymbol](): void;
 }
 //# sourceMappingURL=ExecutionContext.d.ts.map
