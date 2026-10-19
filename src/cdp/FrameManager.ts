@@ -32,6 +32,7 @@ import {FrameTree} from './FrameTree.js';
 import {IsolatedWorld} from './IsolatedWorld.js';
 import {MAIN_WORLD, PUPPETEER_WORLD} from './IsolatedWorlds.js';
 import {NetworkManager} from './NetworkManager.js';
+import {CDP_BINDING_PREFIX} from './utils.js';
 import type {CdpPage} from './Page.js';
 import type {CdpTarget} from './Target.js';
 
@@ -214,6 +215,10 @@ export class FrameManager extends EventEmitter<FrameManagerEvents> {
       this.#onFrameStoppedLoading(event.frameId);
     });
     session.on('Runtime.executionContextCreated', async event => {
+      if (process.env['REBROWSER_PATCHES_RUNTIME_FIX_MODE'] !== '0') {
+        // rebrowser-patches: ignore default logic
+        return
+      }
       await this.#frameTreeHandled?.valueOrThrow();
       this.#onExecutionContextCreated(event.context, session);
     });
@@ -242,9 +247,17 @@ export class FrameManager extends EventEmitter<FrameManagerEvents> {
           this.#frameTreeHandled?.resolve();
         }),
         client.send('Page.setLifecycleEventsEnabled', {enabled: true}),
-        client.send('Runtime.enable').then(() => {
-          return this.#createIsolatedWorld(client, UTILITY_WORLD_NAME);
-        }),
+        (() => {
+          // rebrowser-patches: skip Runtime.enable
+          if (process.env['REBROWSER_PATCHES_RUNTIME_FIX_MODE'] !== '0') {
+            process.env['REBROWSER_PATCHES_DEBUG'] && console.log('[rebrowser-patches][FrameManager] initialize')
+            return this.#createIsolatedWorld(client, UTILITY_WORLD_NAME)
+          }
+
+          return client.send('Runtime.enable').then(() => {
+            return this.#createIsolatedWorld(client, UTILITY_WORLD_NAME);
+          })
+        })(),
         ...(frame
           ? Array.from(this.#scriptsToEvaluateOnNewDocument.values())
           : []
@@ -256,6 +269,31 @@ export class FrameManager extends EventEmitter<FrameManagerEvents> {
         }),
         this.#page.browser().isIssuesEnabled() && client.send('Audits.enable'),
       ]);
+
+      // rebrowser-patches: manually create main world context
+      if (process.env['REBROWSER_PATCHES_RUNTIME_FIX_MODE'] !== '0') {
+        this.frames()
+          .filter(frame => {
+            return frame.client === client;
+          }).map(frame => {
+          const world = frame.worlds[MAIN_WORLD]
+          const contextPayload = {
+            id: -1,
+            name: '',
+            auxData: {
+              frameId: frame._id,
+            }
+          }
+          const context = new ExecutionContext(
+            frame.client,
+            // @ts-ignore
+            contextPayload,
+            world,
+            this.#logger,
+          );
+          world.setContext(context);
+        })
+      }
     } catch (error) {
       this.#frameTreeHandled?.resolve();
       // The target might have been closed before the initialization finished.
@@ -512,6 +550,39 @@ export class FrameManager extends EventEmitter<FrameManagerEvents> {
       this._frameTree.addFrame(frame);
     }
 
+    // rebrowser-patches: we cannot fully dispose contexts as they won't be recreated as we don't have Runtime events,
+    // instead, just mark it all empty
+    if (process.env['REBROWSER_PATCHES_RUNTIME_FIX_MODE'] !== '0') {
+      process.env['REBROWSER_PATCHES_DEBUG'] && console.log(`[rebrowser-patches] onFrameNavigated, navigationType = ${navigationType}, id = ${framePayload.id}, url = ${framePayload.url}`)
+      for (const worldSymbol of [MAIN_WORLD, PUPPETEER_WORLD]) {
+        // @ts-ignore
+        if (frame?.worlds[worldSymbol].context) {
+          // @ts-ignore
+          const frameOrWorker = frame.worlds[worldSymbol].environment
+          if ('clearDocumentHandle' in frameOrWorker) {
+            frameOrWorker.clearDocumentHandle();
+          }
+          // @ts-ignore
+          frame.worlds[worldSymbol].context?.clear(worldSymbol === MAIN_WORLD ? -1 : -2)
+          // rebrowser-patches: re-run pending waitForFunction/waitForSelector in the new document
+          // @ts-ignore
+          void frame.worlds[worldSymbol].taskManager.rerunAll()
+        }
+      }
+    }
+
+    // rebrowser-patches: without Runtime.enable, Chrome drops CDP bindings on navigation (crbug.com/382473087),
+    // so add the exposed functions' bindings again for the new document
+    if (process.env['REBROWSER_PATCHES_RUNTIME_FIX_MODE'] !== '0' && frame) {
+      for (const binding of this.#bindings) {
+        frame.client
+          .send('Runtime.addBinding', {name: CDP_BINDING_PREFIX + binding.name})
+          .catch(error => {
+            this.#logger?.(DEBUG_PREFIXES.error)?.(error);
+          });
+      }
+    }
+
     frame = await this._frameTree.waitForFrame(frameId);
     frame._navigated(framePayload);
     this.emit(FrameManagerEvent.FrameNavigated, frame);
@@ -543,6 +614,24 @@ export class FrameManager extends EventEmitter<FrameManagerEvents> {
               frameId: frame._id,
               worldName: name,
               grantUniveralAccess: true,
+            })
+            .then((createIsolatedWorldResult: any) => {
+              // rebrowser-patches: save created context id
+              if (process.env['REBROWSER_PATCHES_RUNTIME_FIX_MODE'] === '0') {
+                return
+              }
+              if (!createIsolatedWorldResult?.executionContextId) {
+                // probably "Target closed" error, just ignore it
+                return
+              }
+              // @ts-ignore
+              this.#onExecutionContextCreated({
+                id: createIsolatedWorldResult.executionContextId,
+                name,
+                auxData: {
+                  frameId: frame._id,
+                }
+              }, frame.client)
             })
             .catch(error => {
               this.#logger?.(DEBUG_PREFIXES.error)?.(error);

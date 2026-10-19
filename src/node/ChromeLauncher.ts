@@ -175,6 +175,24 @@ export class ChromeLauncher extends BrowserLauncher {
       removeMatchingFlags(options.args, '--disable-features');
     }
 
+    // rebrowser-patches: hide navigator.webdriver with --disable-blink-features=AutomationControlled,
+    // merged with the user's own --disable-blink-features, and drop the flags below that pages can notice
+    // (--enable-automation, --disable-ipc-flooding-protection, --disable-popup-blocking).
+    // REBROWSER_PATCHES_WEBDRIVER_FIX=0 turns all of it off.
+    const webdriverFix = process.env['REBROWSER_PATCHES_WEBDRIVER_FIX'] !== '0';
+    const userDisabledBlinkFeatures = getFeatures(
+      '--disable-blink-features',
+      options.args,
+    );
+    if (webdriverFix && options.args && userDisabledBlinkFeatures.length > 0) {
+      removeMatchingFlags(options.args, '--disable-blink-features');
+    }
+    const disabledBlinkFeatures = [
+      ...new Set(['AutomationControlled', ...userDisabledBlinkFeatures]),
+    ].filter(feature => {
+      return feature !== '';
+    });
+
     const turnOnExperimentalFeaturesForTesting =
       process.env['PUPPETEER_TEST_EXPERIMENTAL_CHROME_FEATURES'] === 'true';
 
@@ -232,13 +250,16 @@ export class ChromeLauncher extends BrowserLauncher {
       '--disable-dev-shm-usage',
       '--disable-hang-monitor',
       '--disable-infobars',
-      '--disable-ipc-flooding-protection',
-      '--disable-popup-blocking',
+      // rebrowser-patches: a normal Chrome ignores history updates past 200 in 10 s and blocks popups opened
+      // without a click; pages can test both
+      webdriverFix ? '' : '--disable-ipc-flooding-protection',
+      webdriverFix ? '' : '--disable-popup-blocking',
       '--disable-prompt-on-repost',
       '--disable-renderer-backgrounding',
       '--disable-search-engine-choice-screen',
       '--disable-sync',
-      '--enable-automation',
+      // rebrowser-patches: --enable-automation shows the "controlled by automated test software" bar
+      webdriverFix ? '' : '--enable-automation',
       '--export-tagged-pdf',
       '--force-color-profile=srgb',
       '--generate-pdf-document-outline',
@@ -248,6 +269,9 @@ export class ChromeLauncher extends BrowserLauncher {
       '--use-mock-keychain',
       `--disable-features=${disabledFeatures.join(',')}`,
       `--enable-features=${enabledFeatures.join(',')}`,
+      webdriverFix
+        ? `--disable-blink-features=${disabledBlinkFeatures.join(',')}`
+        : '',
     ].filter(arg => {
       return arg !== '';
     });
